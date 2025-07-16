@@ -26,15 +26,57 @@ const GetCategories = async (req, res) => {
             ]),
             Course.aggregate([
               { $match: { "category._id": category._id.toString() } },
-              { $unwind: "$lessons" },
-              { $project: { notesCount: { $size: "$lessons.notes" } } },
-              { $group: { _id: null, total: { $sum: "$notesCount" } } },
+              {
+                $project: {
+                  lessonNotesCount: {
+                    $sum: {
+                      $map: {
+                        input: "$lessons",
+                        as: "lesson",
+                        in: { $size: { $ifNull: ["$$lesson.notes", []] } },
+                      },
+                    },
+                  },
+                  coursePDFsCount: { $size: { $ifNull: ["$coursePDFs", []] } },
+                },
+              },
+              {
+                $group: {
+                  _id: null,
+                  total: {
+                    $sum: { $add: ["$lessonNotesCount", "$coursePDFsCount"] },
+                  },
+                },
+              },
             ]),
             Course.aggregate([
               { $match: { "category._id": category._id.toString() } },
-              { $unwind: "$lessons" },
-              { $project: { videosCount: { $size: "$lessons.videos" } } },
-              { $group: { _id: null, total: { $sum: "$videosCount" } } },
+              {
+                $project: {
+                  lessonVideosCount: {
+                    $sum: {
+                      $map: {
+                        input: "$lessons",
+                        as: "lesson",
+                        in: { $size: { $ifNull: ["$$lesson.videos", []] } },
+                      },
+                    },
+                  },
+                  courseVideosCount: {
+                    $size: { $ifNull: ["$courseVideos", []] },
+                  },
+                },
+              },
+              {
+                $group: {
+                  _id: null,
+                  total: {
+                    $sum: {
+                      $add: ["$lessonVideosCount", "$courseVideosCount"],
+                    },
+                  },
+                },
+              },
             ]),
           ]);
 
@@ -119,12 +161,44 @@ const GetCoursesByCategory = async (req, res) => {
       }),
     ]);
 
+    // Enrich courses with content statistics
+    const enrichedCourses = courses.map((course) => ({
+      ...course,
+      contentStatistics: {
+        totalLessons: course.lessons?.length || 0,
+        totalLessonVideos:
+          course.lessons?.reduce(
+            (sum, lesson) => sum + (lesson.videos?.length || 0),
+            0
+          ) || 0,
+        totalLessonNotes:
+          course.lessons?.reduce(
+            (sum, lesson) => sum + (lesson.notes?.length || 0),
+            0
+          ) || 0,
+        totalCourseVideos: course.courseVideos?.length || 0,
+        totalCoursePDFs: course.coursePDFs?.length || 0,
+        totalVideos:
+          (course.lessons?.reduce(
+            (sum, lesson) => sum + (lesson.videos?.length || 0),
+            0
+          ) || 0) + (course.courseVideos?.length || 0),
+        totalPDFs:
+          (course.lessons?.reduce(
+            (sum, lesson) => sum + (lesson.notes?.length || 0),
+            0
+          ) || 0) + (course.coursePDFs?.length || 0),
+        hasOverviewVideo: !!course.overviewVideo,
+        overviewVideoDuration: course.overviewVideoDuration || "00:00:00",
+      },
+    }));
+
     return res.status(200).json(
       GenRes(
         200,
         {
           category,
-          courses,
+          courses: enrichedCourses,
           pagination: {
             page: pageNum,
             limit: limitNum,
@@ -143,7 +217,7 @@ const GetCoursesByCategory = async (req, res) => {
   }
 };
 
-// Get course details with lessons
+// Get course details with lessons and all content (Udemy-like structure)
 const GetCourseDetails = async (req, res) => {
   try {
     const { courseId } = req.params;
@@ -171,19 +245,35 @@ const GetCourseDetails = async (req, res) => {
         ...course,
         contentStructure: {
           totalLessons: course.lessons?.length || 0,
-          totalNotes:
-            course.lessons?.reduce(
-              (sum, lesson) => sum + (lesson.notes?.length || 0),
-              0
-            ) || 0,
-          totalVideos:
+          totalLessonVideos:
             course.lessons?.reduce(
               (sum, lesson) => sum + (lesson.videos?.length || 0),
               0
             ) || 0,
+          totalLessonNotes:
+            course.lessons?.reduce(
+              (sum, lesson) => sum + (lesson.notes?.length || 0),
+              0
+            ) || 0,
+          totalCourseVideos: course.courseVideos?.length || 0,
+          totalCoursePDFs: course.coursePDFs?.length || 0,
+          totalVideos:
+            (course.lessons?.reduce(
+              (sum, lesson) => sum + (lesson.videos?.length || 0),
+              0
+            ) || 0) + (course.courseVideos?.length || 0),
+          totalPDFs:
+            (course.lessons?.reduce(
+              (sum, lesson) => sum + (lesson.notes?.length || 0),
+              0
+            ) || 0) + (course.coursePDFs?.length || 0),
+          hasOverviewVideo: !!course.overviewVideo,
+          overviewVideoDuration: course.overviewVideoDuration || "00:00:00",
         },
       },
       lessons: course.lessons || [],
+      courseVideos: course.courseVideos || [],
+      coursePDFs: course.coursePDFs || [],
     };
 
     if (lessonId) {
@@ -210,8 +300,8 @@ const GetCourseDetails = async (req, res) => {
       }
 
       responseData.selectedLesson = lesson;
-      responseData.notes = lesson.notes || [];
-      responseData.videos = lesson.videos || [];
+      responseData.lessonNotes = lesson.notes || [];
+      responseData.lessonVideos = lesson.videos || [];
     }
 
     return res

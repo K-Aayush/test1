@@ -20,7 +20,10 @@ const {
   UpdateLesson,
   DeleteLesson,
   AddLessonContent,
+  UpdateLessonContent,
   DeleteLessonContent,
+  AddCourseVideo,
+  AddCoursePDF,
 } = require("./admin.methods");
 
 // ==================== PUBLIC ROUTES ====================
@@ -99,12 +102,42 @@ router.post(
   AddLessonContent
 );
 
+// Update lesson content (video or note)
+router.put(
+  "/admin/courses/:courseId/lessons/:lessonId/content/:contentId",
+  basicMiddleware,
+  AdminFiles("private").any(),
+  UpdateLessonContent
+);
+
 // Delete content from lesson
 router.delete(
   "/admin/courses/:courseId/lessons/:lessonId/content/:contentId",
   basicMiddleware,
   DeleteLessonContent
 );
+
+// ==================== COURSE CONTENT MANAGEMENT ====================
+
+// Add video directly to course (not lesson-specific)
+router.post(
+  "/admin/courses/:courseId/videos",
+  basicMiddleware,
+  AdminFiles("private").fields([
+    { name: "video", maxCount: 5 },
+    { name: "thumbnail", maxCount: 5 },
+  ]),
+  AddCourseVideo
+);
+
+// Add PDF directly to course (not lesson-specific)
+router.post(
+  "/admin/courses/:courseId/pdfs",
+  basicMiddleware,
+  AdminFiles("private").any(),
+  AddCoursePDF
+);
+
 // ==================== FILE UPLOAD ROUTES ====================
 
 // Upload course files (public)
