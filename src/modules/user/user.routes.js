@@ -31,7 +31,15 @@ const {
   CheckBlockStatus,
   GetUsersWhoBlockedMe,
 } = require("./block.methods");
+const {
+  GetProfilePicture,
+  GetProfilePictureInfo,
+} = require("./user.profilePicture");
 const RegisterUser = require("./user.register");
+
+// Profile picture routes
+router.get("/profile-picture", GetProfilePicture);
+router.get("/profile-picture-info", GetProfilePictureInfo);
 
 // get request
 router.get("/user-exist", UserExist);
