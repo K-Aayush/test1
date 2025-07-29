@@ -1,9 +1,9 @@
-const Course = require("./course.model");
+const Course = require("./courses.model");
 const Category = require("./category.model");
 const GenRes = require("../../utils/routers/GenRes");
 const { isValidObjectId } = require("mongoose");
 
-// Get all categories
+// Get all categories with course statistics
 const GetCategories = async (req, res) => {
   try {
     const categories = await Category.find({ isActive: true })
@@ -16,16 +16,16 @@ const GetCategories = async (req, res) => {
         const [courseCount, totalLessons, totalNotes, totalVideos] =
           await Promise.all([
             Course.countDocuments({
-              "category._id": category._id.toString(),
+              categoryId: category._id,
               isPublished: true,
             }),
             Course.aggregate([
-              { $match: { "category._id": category._id.toString() } },
+              { $match: { categoryId: category._id } },
               { $project: { lessonsCount: { $size: "$lessons" } } },
               { $group: { _id: null, total: { $sum: "$lessonsCount" } } },
             ]),
             Course.aggregate([
-              { $match: { "category._id": category._id.toString() } },
+              { $match: { categoryId: category._id } },
               {
                 $project: {
                   lessonNotesCount: {
@@ -50,7 +50,7 @@ const GetCategories = async (req, res) => {
               },
             ]),
             Course.aggregate([
-              { $match: { "category._id": category._id.toString() } },
+              { $match: { categoryId: category._id } },
               {
                 $project: {
                   lessonVideosCount: {
@@ -148,7 +148,7 @@ const GetCoursesByCategory = async (req, res) => {
     // Get courses with pagination
     const [courses, total] = await Promise.all([
       Course.find({
-        "category._id": categoryId,
+        categoryId: categoryId,
         isPublished: true,
       })
         .sort({ createdAt: -1 })
@@ -156,7 +156,7 @@ const GetCoursesByCategory = async (req, res) => {
         .limit(limitNum)
         .lean(),
       Course.countDocuments({
-        "category._id": categoryId,
+        categoryId: categoryId,
         isPublished: true,
       }),
     ]);
@@ -217,7 +217,7 @@ const GetCoursesByCategory = async (req, res) => {
   }
 };
 
-// Get course details with lessons and all content (Udemy-like structure)
+// Get course details with lessons and all content
 const GetCourseDetails = async (req, res) => {
   try {
     const { courseId } = req.params;
@@ -231,7 +231,10 @@ const GetCourseDetails = async (req, res) => {
         );
     }
 
-    const course = await Course.findById(courseId).lean();
+    const course = await Course.findById(courseId)
+      .populate("categoryId", "name slug description")
+      .lean();
+
     if (!course) {
       return res
         .status(404)
@@ -243,6 +246,7 @@ const GetCourseDetails = async (req, res) => {
     let responseData = {
       course: {
         ...course,
+        category: course.categoryId, 
         contentStructure: {
           totalLessons: course.lessons?.length || 0,
           totalLessonVideos:
@@ -272,11 +276,39 @@ const GetCourseDetails = async (req, res) => {
         },
       },
       lessons: course.lessons || [],
-      courseVideos: course.courseVideos || [],
-      coursePDFs: course.coursePDFs || [],
     };
 
-    if (lessonId) {
+    // If no specific lesson is requested, show all course-level content
+    if (!lessonId) {
+      responseData.courseVideos = course.courseVideos || [];
+      responseData.coursePDFs = course.coursePDFs || [];
+
+      // Also include all lesson content for overview
+      responseData.allLessonVideos = [];
+      responseData.allLessonNotes = [];
+
+      course.lessons?.forEach((lesson) => {
+        if (lesson.videos) {
+          responseData.allLessonVideos.push(
+            ...lesson.videos.map((video) => ({
+              ...video,
+              lessonId: lesson._id,
+              lessonTitle: lesson.title,
+            }))
+          );
+        }
+        if (lesson.notes) {
+          responseData.allLessonNotes.push(
+            ...lesson.notes.map((note) => ({
+              ...note,
+              lessonId: lesson._id,
+              lessonTitle: lesson.title,
+            }))
+          );
+        }
+      });
+    } else {
+      // If specific lesson is requested, show only that lesson's content
       if (!isValidObjectId(lessonId)) {
         return res
           .status(400)

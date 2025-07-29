@@ -1,4 +1,4 @@
-const Course = require("./course.model");
+const Course = require("./courses.model");
 const Category = require("./category.model");
 const GenRes = require("../../utils/routers/GenRes");
 const { isValidObjectId } = require("mongoose");
@@ -117,7 +117,7 @@ const UpdateCategory = async (req, res) => {
 
     delete updateData._id;
     delete updateData.createdBy;
-    delete updateData.metadata;
+    delete updateData.statistics;
 
     const updatedCategory = await Category.findByIdAndUpdate(
       categoryId,
@@ -196,7 +196,7 @@ const DeleteCategory = async (req, res) => {
 
     // Check if category has courses
     const courseCount = await Course.countDocuments({
-      "category._id": categoryId,
+      categoryId: categoryId,
     });
 
     if (courseCount > 0) {
@@ -315,11 +315,7 @@ const CreateCourse = async (req, res) => {
       thumbnail: thumbnailFile,
       overviewVideo: overviewVideoFile || data.overviewVideo,
       overviewVideoDuration,
-      category: {
-        _id: category._id.toString(),
-        name: category.name,
-        slug: category.slug,
-      },
+      categoryId: category._id,
       author: {
         email: req.user.email,
         phone: req.user.phone || "Not provided",
@@ -333,9 +329,6 @@ const CreateCourse = async (req, res) => {
         credentials: [],
       },
     };
-
-    // Remove processed ID from courseData
-    delete courseData.categoryId;
 
     const newCourse = new Course(courseData);
     await newCourse.save();
@@ -534,7 +527,7 @@ const DeleteCourse = async (req, res) => {
     await Course.findByIdAndDelete(courseId);
 
     // Update category metadata
-    await updateCategoryMetadata(categoryId);
+    await updateCategoryMetadata(course.categoryId);
 
     return res
       .status(200)
@@ -1519,7 +1512,7 @@ const AddCoursePDF = async (req, res) => {
 async function updateCategoryMetadata(categoryId) {
   try {
     const courses = await Course.find({
-      "category._id": categoryId,
+      categoryId: categoryId,
     });
 
     let totalCourses = courses.length;
@@ -1540,11 +1533,11 @@ async function updateCategoryMetadata(categoryId) {
 
     await Category.findByIdAndUpdate(categoryId, {
       $set: {
-        "metadata.totalCourses": totalCourses,
-        "metadata.totalLessons": totalLessons,
-        "metadata.totalNotes": totalNotes,
-        "metadata.totalVideos": totalVideos,
-        "metadata.lastUpdated": new Date(),
+        "statistics.totalCourses": totalCourses,
+        "statistics.totalLessons": totalLessons,
+        "statistics.totalNotes": totalNotes,
+        "statistics.totalVideos": totalVideos,
+        "statistics.lastUpdated": new Date(),
       },
     });
   } catch (error) {
